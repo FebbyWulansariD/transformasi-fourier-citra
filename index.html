@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Febby W. Damanik - Transformasi Fourier Citra</title>
+    <style>
+      :root {
+        --bg-color: #0f172a;
+        --card-bg: #1e293b;
+        --accent-gold: #d97706;
+        --gold-hover: #b45309;
+        --text-primary: #f8fafc;
+        --text-secondary: #94a3b8;
+        --border-color: #334155;
+      }
+
+      body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background-color: var(--bg-color);
+        color: var(--text-primary);
+        margin: 0;
+        padding: 25px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .container {
+        max-width: 1100px;
+        width: 100%;
+        background: var(--card-bg);
+        padding: 30px;
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        border: 1px solid var(--border-color);
+      }
+
+      h3 {
+        margin-top: 0;
+        color: #fbbf24;
+        font-size: 26px;
+        text-align: center;
+        margin-bottom: 25px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+      }
+
+      .main-preview {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 15px;
+        margin-bottom: 25px;
+      }
+
+      canvas {
+        border: 2px solid var(--accent-gold);
+        border-radius: 8px;
+        background-color: #000;
+        box-shadow: 0 4px 15px rgba(217, 119, 6, 0.2);
+      }
+
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: center;
+        align-items: center;
+      }
+
+      input[type="file"] {
+        display: none;
+      }
+
+      .file-label {
+        background: transparent;
+        border: 2px solid var(--accent-gold);
+        color: #fbbf24;
+        padding: 10px 20px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s ease;
+      }
+
+      .file-label:hover {
+        background: var(--accent-gold);
+        color: #000;
+      }
+
+      button {
+        background: linear-gradient(135deg, #d97706, #b45309);
+        color: #fff;
+        border: none;
+        padding: 12px 22px;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.2s, box-shadow 0.2s;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      }
+
+      button:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 18px rgba(217, 119, 6, 0.4);
+      }
+
+      button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        background: #475569;
+      }
+
+      #resolution {
+        margin-top: 10px;
+        color: var(--text-secondary);
+        font-size: 14px;
+        text-align: center;
+      }
+
+      .channel-container {
+        display: flex;
+        gap: 25px;
+        margin-top: 30px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
+      .channel-block {
+        text-align: center;
+        background: #0f172a;
+        padding: 18px;
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
+        box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+      }
+
+      .channel-block p {
+        margin-top: 12px;
+        margin-bottom: 0;
+        color: #fbbf24;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="container">
+      <h3>Transformasi Fourier Citra</h3>
+
+      <div class="main-preview">
+        <canvas id="gambar" width="300" height="300"></canvas>
+        <div id="resolution">Silakan pilih file gambar untuk memulai.</div>
+      </div>
+
+      <div class="controls">
+        <label for="file1" class="file-label">Pilih Gambar</label>
+        <input type="file" id="file1" accept=".jpg, .jpeg, .png, .bmp" />
+
+        <button id="fourierBtn" onclick="transformFourier('gambar')">
+          Fourier Transform
+        </button>
+        <button id="inverseBtn" onclick="inverseFourier()">
+          Inverse Fourier Transform
+        </button>
+      </div>
+
+      <div id="channels" class="channel-container"></div>
+    </div>
+
+    <script>
+      let originalImage = null;
+      let dft2DReal = null;
+      let dft2DImag = null;
+      let width = 0,
+        height = 0;
+      let inverseClicked = false;
+
+      function loadImage(fileInput, canvasId) {
+        const file = fileInput.files[0];
+        if (!file) return;
+        const canvas = document.getElementById(canvasId);
+        const ctx = canvas.getContext("2d");
+        const img = new Image();
+        img.onload = function () {
+          canvas.width = 300;
+          canvas.height = 300;
+          ctx.drawImage(img, 0, 0, 300, 300);
+
+          originalImage = img;
+          dft2DReal = null;
+          dft2DImag = null;
+          inverseClicked = false;
+          document.getElementById("inverseBtn").disabled = false;
+          document.getElementById("resolution").textContent =
+            `Resolusi Asli: ${img.width} x ${img.height} (Ditampilkan 300x300 Tajam)`;
+          clearChannels();
+        };
+        img.src = URL.createObjectURL(file);
+      }
+
+      function clearChannels() {
+        document.getElementById("channels").innerHTML = "";
+      }
+
+      function createChannelCanvas(label, w, h, imgData) {
+        const container = document.getElementById("channels");
+        block = document.createElement("div");
+        block.className = "channel-block";
+
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+
+        const ctx = canvas.getContext("2d");
+        ctx.putImageData(imgData, 0, 0);
+
+        const caption = document.createElement("p");
+        caption.textContent = label;
+
+        block.appendChild(canvas);
+        block.appendChild(caption);
+        container.appendChild(block);
+      }
+
+      // DFT & IDFT 1D
+      function DFT1D(inputReal, inputImag = null) {
+        const N = inputReal.length;
+        const real = new Array(N).fill(0);
+        const imag = new Array(N).fill(0);
+        for (let k = 0; k < N; k++) {
+          for (let n = 0; n < N; n++) {
+            const angle = (-2 * Math.PI * k * n) / N;
+            const valR = inputReal[n];
+            const valI = inputImag ? inputImag[n] : 0;
+            real[k] += valR * Math.cos(angle) - valI * Math.sin(angle);
+            imag[k] += valR * Math.sin(angle) + valI * Math.cos(angle);
+          }
+        }
+        return { real, imag };
+      }
+
+      function IDFT1D(inputReal, inputImag) {
+        const N = inputReal.length;
+        const outR = new Array(N).fill(0);
+        const outI = new Array(N).fill(0);
+        for (let n = 0; n < N; n++) {
+          let sumR = 0;
+          let sumI = 0;
+          for (let k = 0; k < N; k++) {
+            const angle = (2 * Math.PI * k * n) / N;
+            sumR += inputReal[k] * Math.cos(angle) - inputImag[k] * Math.sin(angle);
+            sumI += inputReal[k] * Math.sin(angle) + inputImag[k] * Math.cos(angle);
+          }
+          outR[n] = sumR / N;
+          outI[n] = sumI / N;
+        }
+        return { real: outR, imag: outI };
+      }
+
+      // FOURIER TRANSFORM 2D
+      function transformFourier(canvasId) {
+        clearChannels();
+        const srcCanvas = document.getElementById(canvasId);
+
+        // Diproses pada resolusi 128x128 piksel agar tajam namun tetap responsif
+        width = 128;
+        height = 128;
+        const tempCanvas = document.createElement("canvas");
+        tempCanvas.width = width;
+        tempCanvas.height = height;
+        const ctx = tempCanvas.getContext("2d");
+        ctx.drawImage(srcCanvas, 0, 0, width, height);
+
+        const imgData = ctx.getImageData(0, 0, width, height);
+
+        // Grayscale + Centering
+        let gray = [];
+        for (let y = 0; y < height; y++) {
+          gray[y] = [];
+          for (let x = 0; x < width; x++) {
+            const i = (y * width + x) * 4;
+            let g = Math.round(
+              0.299 * imgData.data[i] +
+              0.587 * imgData.data[i + 1] +
+              0.114 * imgData.data[i + 2]
+            );
+            g = g * ((x + y) % 2 === 0 ? 1 : -1);
+            gray[y][x] = g;
+          }
+        }
+
+        // DFT Baris
+        let tempReal = [];
+        let tempImag = [];
+        for (let y = 0; y < height; y++) {
+          const { real, imag } = DFT1D(gray[y]);
+          tempReal[y] = real;
+          tempImag[y] = imag;
+        }
+
+        // DFT Kolom
+        dft2DReal = [];
+        dft2DImag = [];
+        for (let x = 0; x < width; x++) {
+          const colR = [], colI = [];
+          for (let y = 0; y < height; y++) {
+            colR.push(tempReal[y][x]);
+            colI.push(tempImag[y][x]);
+          }
+          const { real, imag } = DFT1D(colR, colI);
+          for (let y = 0; y < height; y++) {
+            if (!dft2DReal[y]) {
+              dft2DReal[y] = [];
+              dft2DImag[y] = [];
+            }
+            dft2DReal[y][x] = real[y];
+            dft2DImag[y][x] = imag[y];
+          }
+        }
+
+        // Magnitude Spectrum
+        const newImgData = ctx.createImageData(width, height);
+        let maxMag = 0;
+        const mag = [];
+        for (let y = 0; y < height; y++) {
+          mag[y] = [];
+          for (let x = 0; x < width; x++) {
+            const val = Math.sqrt(dft2DReal[y][x] ** 2 + dft2DImag[y][x] ** 2);
+            mag[y][x] = Math.log(1 + val);
+            if (mag[y][x] > maxMag) maxMag = mag[y][x];
+          }
+        }
+
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            const i = (y * width + x) * 4;
+            const val = maxMag === 0 ? 0 : Math.round((mag[y][x] / maxMag) * 255);
+            newImgData.data[i] = newImgData.data[i + 1] = newImgData.data[i + 2] = val;
+            newImgData.data[i + 3] = 255;
+          }
+        }
+
+        createChannelCanvas(
+          "Fourier Transform (Magnitude - Centered)",
+          width,
+          height,
+          newImgData
+        );
+      }
+
+      // INVERSE FOURIER TRANSFORM 2D
+      function inverseFourier() {
+        if (inverseClicked) return;
+        if (!dft2DReal || !dft2DImag) {
+          alert("Silakan lakukan Fourier Transform terlebih dahulu!");
+          return;
+        }
+
+        // IDFT Kolom
+        let tempReal = [];
+        let tempImag = [];
+        for (let x = 0; x < width; x++) {
+          const colR = [], colI = [];
+          for (let y = 0; y < height; y++) {
+            colR.push(dft2DReal[y][x]);
+            colI.push(dft2DImag[y][x]);
+          }
+          const { real, imag } = IDFT1D(colR, colI);
+          for (let y = 0; y < height; y++) {
+            if (!tempReal[y]) {
+              tempReal[y] = [];
+              tempImag[y] = [];
+            }
+            tempReal[y][x] = real[y];
+            tempImag[y][x] = imag[y];
+          }
+        }
+
+        // IDFT Baris
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        const newImgData = ctx.createImageData(width, height);
+
+        for (let y = 0; y < height; y++) {
+          const { real } = IDFT1D(tempReal[y], tempImag[y]);
+          for (let x = 0; x < width; x++) {
+            let val = real[x] * ((x + y) % 2 === 0 ? 1 : -1);
+            val = Math.min(Math.max(Math.round(val), 0), 255);
+            const i = (y * width + x) * 4;
+            newImgData.data[i] = newImgData.data[i + 1] = newImgData.data[i + 2] = val;
+            newImgData.data[i + 3] = 255;
+          }
+        }
+
+        createChannelCanvas(
+          "Inverse Fourier Transform",
+          width,
+          height,
+          newImgData
+        );
+
+        inverseClicked = true;
+        document.getElementById("inverseBtn").disabled = true;
+      }
+
+      document.getElementById("file1").addEventListener("change", function () {
+        loadImage(this, "gambar");
+      });
+    </script>
+  </body>
+</html>
